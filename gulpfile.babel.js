@@ -565,7 +565,7 @@ grunt.initConfig({
         },
         heroku: {
             options: {
-                remote: 'heroku',
+                remote: 'https://git.heroku.com/devinhas-sp.git',
                 branch: 'master'
             }
         },
