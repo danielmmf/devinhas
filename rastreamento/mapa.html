@@ -3,97 +3,44 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Mapa de Motoristas - GeoFire</title>
+<title>Mapa dos Motoristas</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-<style>
-  html, body { height: 100%; margin: 0; font-family: sans-serif; }
-  #mapa { position: absolute; inset: 0; }
-  #painel { position: absolute; z-index: 1000; top: 10px; right: 10px; width: 250px; max-height: 70%;
-            overflow: auto; background: #fff; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,.25); padding: 10px; font-size: 13px; }
-  #painel h3 { margin: 0 0 6px; font-size: 14px; }
-  #lista div { padding: 5px 0; border-top: 1px solid #eee; cursor: pointer; }
-  #status { color: #6c757d; margin-top: 6px; }
-</style>
+<style>html,body,#mapa{height:100%;margin:0}</style>
 </head>
 <body>
 <div id="mapa"></div>
-<div id="painel">
-  <h3>🚚 Motoristas ativos (<span id="total">0</span>)</h3>
-  <div id="lista"></div>
-  <div id="status">Conectando…</div>
-</div>
-
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
 <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
 <script src="https://cdn.firebase.com/libs/geofire/5.0.1/geofire.min.js"></script>
-<script src="firebase-config.js"></script>
 <script>
-const CFG = self.RASTREAMENTO_CONFIG;
-firebase.initializeApp(CFG.firebase);
-const db = firebase.database();
-const geoFire = new GeoFire(db.ref(CFG.geofirePath));
+firebase.initializeApp({
+  apiKey: "AIzaSyC4rG9xevBnnnD2C8yartqn1Jj80tK8HBM",
+  authDomain: "rastreioguapiara.firebaseapp.com",
+  databaseURL: "https://rastreioguapiara-default-rtdb.europe-west1.firebasedatabase.app",
+  projectId: "rastreioguapiara",
+  storageBucket: "rastreioguapiara.firebasestorage.app",
+  messagingSenderId: "633809880923",
+  appId: "1:633809880923:web:d4ee01c480ea60d93c3c7e"
+});
 
 const mapa = L.map('mapa').setView([-14.2, -51.9], 4);
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-  maxZoom: 19, attribution: '&copy; OpenStreetMap'
-}).addTo(mapa);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom: 19}).addTo(mapa);
 
-const marcadores = {};   // key -> L.marker
-const metas = {};        // key -> dados extras
-let primeiroAjuste = true;
+const marcadores = {};
+let ajustou = false;
 
-function esc(s) {
-  return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-}
-function popup(key) {
-  const m = metas[key] || {};
-  const hora = m.ts ? new Date(m.ts).toLocaleTimeString() : '—';
-  return `<b>${esc(m.nome || key)}</b><br>${esc(m.modelo || '')} ${esc(m.placa || '')}` +
-         `<br>Destino: ${esc(m.destino || '—')}<br>Atualizado: ${hora}`;
-}
-function atualizarLista() {
-  const keys = Object.keys(marcadores);
-  document.getElementById('total').textContent = keys.length;
-  const lista = document.getElementById('lista');
-  lista.innerHTML = '';
-  keys.forEach(k => {
-    const d = document.createElement('div');
-    d.textContent = (metas[k] && metas[k].nome) || k;
-    d.onclick = () => { mapa.setView(marcadores[k].getLatLng(), 16); marcadores[k].openPopup(); };
-    lista.appendChild(d);
-  });
-}
-function ajustarVista() {
-  const pts = Object.values(marcadores).map(m => m.getLatLng());
-  if (pts.length) mapa.fitBounds(L.latLngBounds(pts).pad(0.3), { maxZoom: 16 });
-}
-
-// Raio inicial grande para capturar todos os motoristas na primeira carga.
-const query = geoFire.query({ center: [0, 0], radius: 20000 });
+// raio de 20000 km = pega todos os pontos do geofire
+const query = new GeoFire(firebase.database().ref('geofire')).query({center: [0, 0], radius: 20000});
 
 query.on('key_entered', (key, loc) => {
-  const m = L.marker(loc).addTo(mapa);
-  marcadores[key] = m;
-  m.bindPopup(() => popup(key));
-  db.ref(`${CFG.metaPath}/${key}`).on('value', s => {
-    metas[key] = s.val() || {};
-    atualizarLista();
-  });
-  atualizarLista();
-  clearTimeout(ajustarVista.t);
-  if (primeiroAjuste) ajustarVista.t = setTimeout(() => { ajustarVista(); primeiroAjuste = false; }, 800);
+  marcadores[key] = L.marker(loc).addTo(mapa).bindPopup(key);
 });
-query.on('key_moved', (key, loc) => { if (marcadores[key]) marcadores[key].setLatLng(loc); });
-query.on('key_exited', key => {
-  if (marcadores[key]) { mapa.removeLayer(marcadores[key]); delete marcadores[key]; }
-  db.ref(`${CFG.metaPath}/${key}`).off();
-  delete metas[key];
-  atualizarLista();
-});
-query.on('ready', () => { document.getElementById('status').textContent = 'Ao vivo 🟢'; });
-db.ref('.info/connected').on('value', s => {
-  if (!s.val()) document.getElementById('status').textContent = 'Sem conexão com o Firebase…';
+query.on('key_moved', (key, loc) => marcadores[key].setLatLng(loc));
+query.on('key_exited', key => { mapa.removeLayer(marcadores[key]); delete marcadores[key]; });
+query.on('ready', () => {
+  const pts = Object.values(marcadores).map(m => m.getLatLng());
+  if (pts.length && !ajustou) { mapa.fitBounds(L.latLngBounds(pts).pad(0.3), {maxZoom: 16}); ajustou = true; }
 });
 </script>
 </body>

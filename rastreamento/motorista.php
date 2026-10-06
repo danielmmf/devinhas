@@ -189,7 +189,23 @@ if ($viagem_id) {
     <?php endif; ?>
 </div>
 
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+<script src="https://cdn.firebase.com/libs/geofire/5.0.1/geofire.min.js"></script>
 <script>
+const firebaseConfig = {
+    apiKey: "AIzaSyC4rG9xevBnnnD2C8yartqn1Jj80tK8HBM",
+    authDomain: "rastreioguapiara.firebaseapp.com",
+    databaseURL: "https://rastreioguapiara-default-rtdb.europe-west1.firebasedatabase.app",
+    projectId: "rastreioguapiara",
+    storageBucket: "rastreioguapiara.firebasestorage.app",
+    messagingSenderId: "633809880923",
+    appId: "1:633809880923:web:d4ee01c480ea60d93c3c7e"
+};
+firebase.initializeApp(firebaseConfig);
+const geoFire = new GeoFire(firebase.database().ref('geofire'));
+const GEOFIRE_KEY = 'viagem_<?= (int)$viagem_id ?>';
+
 window.addEventListener('DOMContentLoaded', () => {
     // Validação estrita do ambiente nativo
     const isNativeApp = (window.Capacitor && window.Capacitor.isNativePlatform()) || 
@@ -219,44 +235,6 @@ let intervaloEnvio = null;
 let pluginBackgroundGeo = null;
 let envioAtivo = false;
 
-// --- Service worker: envia a posição ao GeoFire (a página lê o GPS, o SW grava) ---
-const VIAGEM = <?= $viagem ? json_encode([
-    'id' => (int)$viagem['id'],
-    'motorista' => $viagem['motorista'],
-    'placa' => $viagem['placa'],
-    'modelo' => $viagem['modelo'],
-    'destino' => $viagem['destino'],
-], JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP) : 'null' ?>;
-const GEOFIRE_KEY = VIAGEM ? 'viagem_' + VIAGEM.id : null;
-let swPronto = null;
-
-function registrarServiceWorker() {
-    if (!('serviceWorker' in navigator)) return null;
-    swPronto = navigator.serviceWorker.register('sw-rastreamento.js')
-        .then(() => navigator.serviceWorker.ready)
-        .catch(err => { console.error('Falha ao registrar SW:', err); return null; });
-    navigator.serviceWorker.addEventListener('message', e => {
-        if (e.data && e.data.tipo === 'erro') console.warn('SW (sem rede, será reenviado):', e.data.erro);
-    });
-    return swPronto;
-}
-
-async function enviarAoServiceWorker(msg) {
-    const reg = swPronto ? await swPronto : null;
-    const alvo = (reg && reg.active) || navigator.serviceWorker.controller;
-    if (alvo) alvo.postMessage(msg);
-}
-
-function enviarParaGeofire(lat, lng) {
-    if (!GEOFIRE_KEY) return;
-    enviarAoServiceWorker({
-        tipo: 'posicao', key: GEOFIRE_KEY, lat, lng, ts: Date.now(),
-        meta: { nome: VIAGEM.motorista, placa: VIAGEM.placa, modelo: VIAGEM.modelo, destino: VIAGEM.destino, viagem_id: VIAGEM.id }
-    });
-}
-
-registrarServiceWorker();
-
 async function ativarWakeLock() {
     try {
         if ('wakeLock' in navigator) {
@@ -282,7 +260,7 @@ function iniciarRastreamento(viagemId) {
     <?php endif; ?>
 
     function enviarCoordenadas(lat, lng) {
-        enviarParaGeofire(lat, lng);
+        geoFire.set(GEOFIRE_KEY, [lat, lng]).catch(e => console.error('GeoFire:', e));
         fetch('atualiza_posicao.php', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -430,7 +408,7 @@ function cancelarRastreamento() {
         wakeLock = null;
     }
 
-    if (GEOFIRE_KEY) enviarAoServiceWorker({ tipo: 'parar', key: GEOFIRE_KEY });
+    geoFire.remove(GEOFIRE_KEY);
 
     envioAtivo = false;
     ultimaLat = null;
