@@ -204,8 +204,13 @@ const firebaseConfig = {
 };
 firebase.initializeApp(firebaseConfig);
 const geoFire = new GeoFire(firebase.database().ref('geofire'));
-// ID no GeoFire = telefone do motorista só com dígitos (ex.: 15999998888)
-const GEOFIRE_KEY = '<?= $viagem ? preg_replace('/\D/', '', (string)$viagem['telefone']) : '' ?>';
+// ID no GeoFire = telefone só com dígitos, sem 55 e sem 0 na frente (ex.: 15999998888), igual ao APK
+<?php
+$tel = $viagem ? preg_replace('/\D/', '', (string)$viagem['telefone']) : '';
+if (strlen($tel) >= 12 && substr($tel, 0, 2) === '55') $tel = substr($tel, 2);
+$tel = ltrim($tel, '0');
+?>
+const GEOFIRE_KEY = '<?= $tel ?>';
 
 window.addEventListener('DOMContentLoaded', () => {
     // Validação estrita do ambiente nativo
