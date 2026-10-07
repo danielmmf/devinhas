@@ -11,7 +11,7 @@ $apk_existe = file_exists('app-motorista.apk');
 if ($viagem_id) {
     try {
         $stmt =$pdo->prepare("
-            SELECT vi.id, v.modelo, v.placa, m.nome AS motorista, vi.destino, vi.data_viagem 
+            SELECT vi.id, v.modelo, v.placa, m.nome AS motorista, m.telefone, vi.destino, vi.data_viagem 
             FROM viagens vi
             LEFT JOIN veiculos v ON vi.veiculo_id = v.id
             LEFT JOIN motoristas m ON vi.motorista_id = m.id
@@ -204,7 +204,8 @@ const firebaseConfig = {
 };
 firebase.initializeApp(firebaseConfig);
 const geoFire = new GeoFire(firebase.database().ref('geofire'));
-const GEOFIRE_KEY = 'viagem_<?= (int)$viagem_id ?>';
+// ID no GeoFire = telefone do motorista só com dígitos (ex.: 15999998888)
+const GEOFIRE_KEY = '<?= $viagem ? preg_replace('/\D/', '', (string)$viagem['telefone']) : '' ?>';
 
 window.addEventListener('DOMContentLoaded', () => {
     // Validação estrita do ambiente nativo
@@ -260,7 +261,14 @@ function iniciarRastreamento(viagemId) {
     <?php endif; ?>
 
     function enviarCoordenadas(lat, lng) {
-        geoFire.set(GEOFIRE_KEY, [lat, lng]).catch(e => console.error('GeoFire:', e));
+        if (GEOFIRE_KEY) {
+            geoFire.set(GEOFIRE_KEY, [lat, lng]).catch(e => console.error('GeoFire:', e));
+            firebase.database().ref('motoristas/' + GEOFIRE_KEY).set({
+                nome: <?= json_encode($viagem['motorista'] ?? '', JSON_UNESCAPED_UNICODE | JSON_HEX_TAG) ?>,
+                placa: <?= json_encode($viagem['placa'] ?? '', JSON_HEX_TAG) ?>,
+                hora: Date.now()
+            });
+        }
         fetch('atualiza_posicao.php', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -408,7 +416,7 @@ function cancelarRastreamento() {
         wakeLock = null;
     }
 
-    geoFire.remove(GEOFIRE_KEY);
+    if (GEOFIRE_KEY) geoFire.remove(GEOFIRE_KEY);
 
     envioAtivo = false;
     ultimaLat = null;

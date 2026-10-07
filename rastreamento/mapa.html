@@ -33,11 +33,26 @@ let ajustou = false;
 // raio de 20000 km = pega todos os pontos do geofire
 const query = new GeoFire(firebase.database().ref('geofire')).query({center: [0, 0], radius: 20000});
 
+// key = telefone do motorista (só dígitos)
+function popup(tel, m) {
+  const fone = tel.startsWith('55') ? tel : '55' + tel;
+  const esc = s => String(s || '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  return `<b>${esc(m.nome) || 'Motorista'}</b> ${esc(m.placa)}<br>Tel: ${tel}` +
+         (m.hora ? `<br>Atualizado: ${new Date(m.hora).toLocaleTimeString()}` : '') +
+         `<br><a href="https://wa.me/${fone}" target="_blank">💬 WhatsApp</a> | <a href="sms:+${fone}">✉️ SMS</a>`;
+}
+
 query.on('key_entered', (key, loc) => {
-  marcadores[key] = L.marker(loc).addTo(mapa).bindPopup(key);
+  marcadores[key] = L.marker(loc).addTo(mapa).bindPopup(popup(key, {}));
+  firebase.database().ref('motoristas/' + key).on('value', s => {
+    if (marcadores[key]) marcadores[key].setPopupContent(popup(key, s.val() || {}));
+  });
 });
 query.on('key_moved', (key, loc) => marcadores[key].setLatLng(loc));
-query.on('key_exited', key => { mapa.removeLayer(marcadores[key]); delete marcadores[key]; });
+query.on('key_exited', key => {
+  firebase.database().ref('motoristas/' + key).off();
+  mapa.removeLayer(marcadores[key]); delete marcadores[key];
+});
 query.on('ready', () => {
   const pts = Object.values(marcadores).map(m => m.getLatLng());
   if (pts.length && !ajustou) { mapa.fitBounds(L.latLngBounds(pts).pad(0.3), {maxZoom: 16}); ajustou = true; }
